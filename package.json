@@ -11,5 +11,8 @@
     "url": "git+https://github.com/mcumbers/testDataGen.git"
   },
   "author": "Michael Cumbers",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "promised-sqlite3": "^1.2.0"
+  }
 }
