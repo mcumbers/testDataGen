@@ -3,22 +3,18 @@ const Tools = require('./lib/tools/Tools');
 
 module.exports = class TestDataGenerator {
 
-	constructor(config = { preFetchLocations: true, preFetchLocationsMax: 10000 }) {
+	constructor(config = { preFetchLocations: true, preFetchLocationsMax: 10000, preFetchNames: true, preFetchNamesMax: 10000 }) {
 		Object.defineProperty(this, 'sqlite', { value: new PromisedDatabase() });
-		Object.defineProperty(this, 'records', { value: new Array() });
 		Object.defineProperty(this, 'locations', { value: new Array() });
+		Object.defineProperty(this, 'maleNames', { value: new Array() });
+		Object.defineProperty(this, 'femaleNames', { value: new Array() });
+		Object.defineProperty(this, 'unisexNames', { value: new Array() });
 		Object.defineProperty(this, 'preFetchLocations', { value: Boolean(config.preFetchLocations) });
 		Object.defineProperty(this, 'preFetchLocationsMax', { value: parseInt(config.preFetchLocationsMax) });
+		Object.defineProperty(this, 'preFetchNames', { value: Boolean(config.preFetchNames) });
+		Object.defineProperty(this, 'preFetchNamesMax', { value: parseInt(config.preFetchNamesMax) });
 	}
 
-	// Number of Records
-	// Split into households?
-	// Rename fields
-	// Chance of blank per field
-	// Reformat per field
-	// Custom fields
-	// Chance of incorrectly formatted data per fields
-	// Export format (JSON or CSV)
 	async generateBatch(params = { records: 10 }) {
 		await this.openDB();
 
@@ -37,23 +33,55 @@ module.exports = class TestDataGenerator {
 	}
 
 	async generatePerson() {
-		let gender = this.getGender();
-		let firstName = await this.getGivenName(gender);
-		let lastName = await this.getSurname();
-		let location = await this.getLocation();
+		const gender = this.getGender();
+		const firstName = await this.getGivenName(gender);
+		const lastName = await this.getSurname();
+		const birthday = this.getDate();
+		const location = await this.getLocation();
 
 		return {
 			firstName: firstName,
 			lastName: lastName,
 			gender:	gender,
+			birthday: birthday.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }),
 			location: location
 		};
 	}
 
 	async getGivenName(gender = this.getGender(true)) {
-		const tableNames = { 'male': 'MaleNames', 'female': 'FemaleNames' };
-		const row = await this.sqlite.get(`SELECT * FROM ${tableNames[gender==='other'?this.getGender(true):gender]} ORDER BY RANDOM() LIMIT 1`);
-		return row.name;
+		const maleChance = ['maleNames', 'maleNames', 'unisexNames'];
+		const femaleChance = ['femaleNames', 'femaleNames', 'unisexNames'];
+		const otherChance = ['maleNames', 'femaleNames', 'unisexNames'];
+
+		const randomSelector = Tools.getRandomNumber(0,2);
+
+		switch (gender) {
+			case 'male': if (this[maleChance[randomSelector]].length) return this[maleChance[randomSelector]].pop(); break;
+			case 'female': if (this[femaleChance[randomSelector]].length) return this[femaleChance[randomSelector]].pop(); break;
+			case 'other': if (this[otherChance[randomSelector]].length) return this[otherChance[randomSelector]].pop(); break;
+		}
+
+		const queryStringBase = 'SELECT * FROM GivenNames';
+
+		// Always get unisex names
+		let conditionsByColumn = { gender: ['u'] };
+		// If gender is 'other' get both female and male names
+		if (gender === 'male' || gender === 'other') conditionsByColumn.gender.push('m');
+		if (gender === 'female' || gender === 'other') conditionsByColumn.gender.push('f');
+
+		const queryString = await this.buildQueryString(queryStringBase, conditionsByColumn, 'ORDER BY RANDOM()', this.preFetchNames ? this.preFetchNamesMax : 0);
+		
+		const data = await this.sqlite.all(queryString);
+
+		for await (const row of data) {
+			switch (row.gender) {
+				case 'm': this.maleNames.push(row.name); break;
+				case 'f': this.femaleNames.push(row.name); break;
+				case 'u': this.unisexNames.push(row.name); break;
+			}
+		}
+
+		return await this.getGivenName(gender);
 	}
 
 	async getSurname() {
@@ -63,8 +91,8 @@ module.exports = class TestDataGenerator {
 
 	async getLocation(countryCodes = [], provinces = [], cities = []) {
 		if (this.locations.length) return this.locations.pop();
-		const queryStringBase = 'SELECT PostalCodes.placeName as city, Provinces.name as province, PostalCodes.countryCode as country, PostalCodes.postalCode FROM PostalCodes INNER JOIN Provinces ON PostalCodes.countryCode=Provinces.countryCode AND PostalCodes.admin1Code=Provinces.admin1Code';
-		const columnNames = { countryCodes: 'PostalCodes|countryCode', provinces: 'Provinces|name', cities: 'PostalCodes|placeName'};
+		const queryStringBase = 'SELECT * FROM Locations';
+		const columnNames = { countryCodes: 'country', provinces: 'province', cities: 'city'};
 		let conditionsByColumn = {};
 		
 		if (countryCodes.length) {
@@ -95,7 +123,7 @@ module.exports = class TestDataGenerator {
 			this.locations.push(row);
 		}
 
-		return this.locations.pop();
+		return await this.getLocation(countryCodes, provinces, cities);
 	}
 
 	async buildQueryString(base = '', conditionsByColumn = {}, suffix = '', limit = 0) {
