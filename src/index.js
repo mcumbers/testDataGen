@@ -3,16 +3,19 @@ const Tools = require('./lib/tools/Tools');
 
 module.exports = class TestDataGenerator {
 
-	constructor(config = { preFetchLocations: true, preFetchLocationsMax: 10000, preFetchNames: true, preFetchNamesMax: 10000 }) {
+	constructor(config = { preFetchLocations: true, preFetchLocationsMax: 10000, preFetchGivenNames: true, preFetchGivenNamesMax: 10000, preFetchSurnames: true, preFetchSurnamesMax: 10000 }) {
 		Object.defineProperty(this, 'sqlite', { value: new PromisedDatabase() });
 		Object.defineProperty(this, 'locations', { value: new Array() });
 		Object.defineProperty(this, 'maleNames', { value: new Array() });
 		Object.defineProperty(this, 'femaleNames', { value: new Array() });
 		Object.defineProperty(this, 'unisexNames', { value: new Array() });
+		Object.defineProperty(this, 'surnames', { value: new Array() });
 		Object.defineProperty(this, 'preFetchLocations', { value: Boolean(config.preFetchLocations) });
 		Object.defineProperty(this, 'preFetchLocationsMax', { value: parseInt(config.preFetchLocationsMax) });
-		Object.defineProperty(this, 'preFetchNames', { value: Boolean(config.preFetchNames) });
-		Object.defineProperty(this, 'preFetchNamesMax', { value: parseInt(config.preFetchNamesMax) });
+		Object.defineProperty(this, 'preFetchGivenNames', { value: Boolean(config.preFetchGivenNames) });
+		Object.defineProperty(this, 'preFetchGivenNamesMax', { value: parseInt(config.preFetchGivenNamesMax) });
+		Object.defineProperty(this, 'preFetchSurnames', { value: Boolean(config.preFetchSurnames) });
+		Object.defineProperty(this, 'preFetchSurnamesMax', { value: parseInt(config.preFetchSurnamesMax) });
 	}
 
 	async generateBatch(params = { records: 10 }) {
@@ -69,7 +72,7 @@ module.exports = class TestDataGenerator {
 		if (gender === 'male' || gender === 'other') conditionsByColumn.gender.push('m');
 		if (gender === 'female' || gender === 'other') conditionsByColumn.gender.push('f');
 
-		const queryString = await this.buildQueryString(queryStringBase, conditionsByColumn, 'ORDER BY RANDOM()', this.preFetchNames ? this.preFetchNamesMax : 0);
+		const queryString = await this.buildQueryString(queryStringBase, conditionsByColumn, 'ORDER BY RANDOM()', this.preFetchGivenNames ? this.preFetchGivenNamesMax : 1);
 		
 		const data = await this.sqlite.all(queryString);
 
@@ -85,8 +88,18 @@ module.exports = class TestDataGenerator {
 	}
 
 	async getSurname() {
-		const row = await this.sqlite.get(`SELECT * FROM Surnames ORDER BY RANDOM() LIMIT 1`);
-		return row.name;
+		if (this.surnames.length) return this.surnames.pop();
+
+		const queryStringBase = 'SELECT * FROM Surnames';
+		const queryString = await this.buildQueryString(queryStringBase, {}, 'ORDER BY RANDOM()', this.preFetchSurnames ? this.preFetchSurnamesMax : 1);
+
+		const data = await this.sqlite.all(queryString);
+
+		for await (const row of data) {
+			this.surnames.push(row.name);
+		}
+
+		return await this.getSurname();
 	}
 
 	async getLocation(countryCodes = [], provinces = [], cities = []) {
@@ -126,7 +139,7 @@ module.exports = class TestDataGenerator {
 		return await this.getLocation(countryCodes, provinces, cities);
 	}
 
-	async buildQueryString(base = '', conditionsByColumn = {}, suffix = '', limit = 0) {
+	async buildQueryString(base = '', conditionsByColumn = {}, suffix = '', limit = 1) {
 		let queryString = base;
 
 		if (Object.keys(conditionsByColumn).length) {
