@@ -44,7 +44,7 @@ module.exports = class TestDataGenerator {
 		const birthday = this.getDate();
 		const location = await this.getLocation(['CA'], ['British Columbia']);
 		const address = await this.getAddress();
-		const newEmail = await this.generateEmail(firstName, lastName);
+		const email = await this.getEmail(firstName, lastName);
 
 		location.address = address;
 
@@ -54,7 +54,7 @@ module.exports = class TestDataGenerator {
 			gender:	gender,
 			birthday: birthday.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }),
 			address: location,
-			email: newEmail
+			email: email
 		};
 	}
 
@@ -134,7 +134,7 @@ module.exports = class TestDataGenerator {
 		return `${streetNumber} ${streetName} ${streetType}`;
 	}
 
-	async generateEmail(firstName = '', lastName = '') {
+	async getEmail(firstName = '', lastName = '') {
 		// Load Top Level Domains into memory if they haven't already been...
 		if (!this.topLevelDomains.length) {
 
