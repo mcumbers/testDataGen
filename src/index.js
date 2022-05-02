@@ -10,6 +10,8 @@ module.exports = class TestDataGenerator {
 		Object.defineProperty(this, 'femaleNames', { value: new Array() });
 		Object.defineProperty(this, 'unisexNames', { value: new Array() });
 		Object.defineProperty(this, 'surnames', { value: new Array() });
+		Object.defineProperty(this, 'streetTypes', { value: new Array() });
+		Object.defineProperty(this, 'topLevelDomains', { value: new Array() });
 		Object.defineProperty(this, 'preFetchLocations', { value: Boolean(config.preFetchLocations) });
 		Object.defineProperty(this, 'preFetchLocationsMax', { value: parseInt(config.preFetchLocationsMax) });
 		Object.defineProperty(this, 'preFetchGivenNames', { value: Boolean(config.preFetchGivenNames) });
@@ -40,14 +42,19 @@ module.exports = class TestDataGenerator {
 		const firstName = await this.getGivenName(gender);
 		const lastName = await this.getSurname();
 		const birthday = this.getDate();
-		const location = await this.getLocation();
+		const location = await this.getLocation(['CA'], ['British Columbia']);
+		const address = await this.getAddress();
+		const newEmail = await this.generateEmail(firstName, lastName);
+
+		location.address = address;
 
 		return {
 			firstName: firstName,
 			lastName: lastName,
 			gender:	gender,
 			birthday: birthday.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }),
-			location: location
+			address: location,
+			email: newEmail
 		};
 	}
 
@@ -100,6 +107,74 @@ module.exports = class TestDataGenerator {
 		}
 
 		return await this.getSurname();
+	}
+
+	async getAddress() {
+		// Load Street Types into memory if they haven't already been...
+		if (!this.streetTypes.length) {
+
+			const queryStringBase = 'SELECT * FROM StreetTypes';
+			const queryString = await this.buildQueryString(queryStringBase, {}, 'ORDER BY RANDOM()', 99999);
+
+			const data = await this.sqlite.all(queryString);
+
+			for await (const row of data) {
+				this.streetTypes.push(row.name);
+			}
+
+		}
+
+		// Generate random street number
+		const streetNumber = Tools.getRandomNumber(1,29999);
+		// Use a random Surname as street name
+		const streetName = await this.getSurname();
+		// Pick a random street type
+		const streetType = this.streetTypes[Tools.getRandomNumber(0,this.streetTypes.length-1)];
+
+		return `${streetNumber} ${streetName} ${streetType}`;
+	}
+
+	async generateEmail(firstName = '', lastName = '') {
+		// Load Top Level Domains into memory if they haven't already been...
+		if (!this.topLevelDomains.length) {
+
+			const queryStringBase = 'SELECT * FROM TopLevelDomains';
+			const queryString = await this.buildQueryString(queryStringBase, {}, 'ORDER BY RANDOM()', 99999);
+
+			const data = await this.sqlite.all(queryString);
+
+			for await (const row of data) {
+				this.topLevelDomains.push(row.name);
+			}
+
+		}
+
+		const randomDomainPattern = Tools.getRandomNumber(1,6);
+		const randomPattern = Tools.getRandomNumber(1,9);
+
+		let domain = '';
+
+		switch (randomDomainPattern) {
+			case 1: domain = 'gmail.com'; break;
+			case 2: domain = 'outlook.com'; break;
+			case 3: domain = 'yahoo.com'; break;
+			case 4: domain = 'hotmail.com'; break;
+			case 5: domain = `${lastName}.${this.topLevelDomains[Tools.getRandomNumber(0,this.topLevelDomains.length-1)]}`; break;
+			case 6: domain = `${firstName}${lastName}.${this.topLevelDomains[Tools.getRandomNumber(0,this.topLevelDomains.length-1)]}`; break;
+		}
+
+		switch (randomPattern) {
+			case 1: return `${firstName}@${domain}`.toLowerCase();
+			case 2: return `${firstName}_${lastName}@${domain}`.toLowerCase();
+			case 3: return `${firstName}.${lastName}@${domain}`.toLowerCase();
+			case 4: return `${lastName}_${firstName}@${domain}`.toLowerCase();
+			case 5: return `${lastName}.${firstName}@${domain}`.toLowerCase();
+			case 6: return `${firstName}${lastName}@${domain}`.toLowerCase();
+			case 7: return `${lastName}${firstName}@${domain}`.toLowerCase();
+			case 8: return `${firstName}${Tools.getRandomNumber(0,9999)}@${domain}`.toLowerCase();
+			case 9: return `${lastName}${Tools.getRandomNumber(0,9999)}@${domain}`.toLowerCase();
+		}
+
 	}
 
 	async getLocation(countryCodes = [], provinces = [], cities = []) {
@@ -171,14 +246,6 @@ module.exports = class TestDataGenerator {
 	getGender(binaryOnly = false) {
 		const genders = ['male','female','other'];
 		return genders[Tools.getRandomNumber(0,binaryOnly?1:2)];
-	}
-
-	async getPhoneNumber() {
-
-	}
-
-	async getEmail(givenName, surname) {
-
 	}
 
 }
