@@ -20,13 +20,24 @@ module.exports = class TestDataGenerator {
 		Object.defineProperty(this, 'preFetchSurnamesMax', { value: parseInt(config.preFetchSurnamesMax) });
 	}
 
-	async generateBatch(params = { records: 10 }) {
+	async generateBatch(params = { records: 10, familySizeMin: 1, familySizeMax: 10 }) {
 		await this.openDB();
 
 		const records = [];
 
-		for (let i = 0; i < params.records; i++) {
-			records.push(await this.generatePerson());
+		let mockFamilyID = Tools.getRandomNumber(0,9999999);
+
+		while (records.length < params.records) {
+			// Random size of family
+			let familySize = Tools.getWeightedRandomInt(params.familySizeMin, params.familySizeMax);
+			// Check to see if we'd generate too many records
+			if (familySize + records.length > params.records) familySize = params.records - records.length;
+			// Generate a family of this size
+			const family = await this.generateFamily(familySize, mockFamilyID);
+			// Add records for this family to records array
+			records.push(...family);
+			// Increment mockFamilyID randomly
+			mockFamilyID = mockFamilyID + Tools.getRandomNumber(1,1000);
 		}
 
 		await this.sqlite.close();
@@ -37,16 +48,34 @@ module.exports = class TestDataGenerator {
 		return await this.sqlite.open(__dirname + '/resources/ReferenceData.sqlite');
 	}
 
-	async generatePerson() {
-		const gender = this.getGender();
-		const firstName = await this.getGivenName(gender);
-		const lastName = await this.getSurname();
-		const birthday = this.getDate();
-		const location = await this.getLocation(['CA'], ['British Columbia']);
-		const address = await this.getAddress();
-		const email = await this.getEmail(firstName, lastName);
+	async generateFamily(size = 1, familyID = 0) {
+		const records = [];
 
-		location.address = address;
+		// Create the first person of the household -- to be designated as the 'head'
+		// Addresses and surnames from this person will be shared with all other household members
+		// This person is always an adult
+		// Birthday override here chooses a birthday between 112 years ago and 18 years ago
+		const householdHead = await this.generatePerson({ birthday: this.getDate(Date.now() - 3532032000000, Date.now() - 567648000000), familyID: familyID });
+		records.push(householdHead);
+		
+		while (records.length < size) {
+			records.push(await this.generatePerson({ lastName: householdHead.lastName, address: householdHead.address, familyID: familyID }));
+		}
+
+		return records;
+	}
+
+	async generatePerson(overrides = { gender: null, firstName: null, lastName: null, birthday: null, address: null, email: null, familyID: null }) {
+		const gender = overrides.gender ? overrides.gender : this.getGender();
+		const firstName = overrides.firstName ? overrides.firstName : await this.getGivenName(gender);
+		const lastName = overrides.lastName ? overrides.lastName : await this.getSurname();
+		const birthday = overrides.birthday ? overrides.birthday : this.getDate();
+		const location = overrides.address ? overrides.address : await this.getLocation();
+		const address = overrides.address ? overrides.address.lineOne : await this.getAddress();
+		const email = overrides.email ? overrides.email : await this.getEmail(firstName, lastName);
+		const familyID = overrides.familyID ? overrides.familyID : null;
+
+		location.lineOne = address;
 
 		return {
 			firstName: firstName,
@@ -54,7 +83,8 @@ module.exports = class TestDataGenerator {
 			gender:	gender,
 			birthday: birthday.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }),
 			address: location,
-			email: email
+			email: email,
+			familyID: familyID
 		};
 	}
 
@@ -149,7 +179,7 @@ module.exports = class TestDataGenerator {
 
 		}
 
-		const randomDomainPattern = Tools.getRandomNumber(1,6);
+		const randomDomainPattern = Tools.getWeightedRandomInt(1,6);
 		const randomPattern = Tools.getRandomNumber(1,9);
 
 		let domain = '';
